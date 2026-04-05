@@ -1,0 +1,5 @@
+{
+  "name": "Remix: TikTok Shop Tracker v.3.13",
+  "description": "A mobile-optimized tracker for TikTok Shop orders with QRIS payment confirmation and admin dashboard.",
+  "requestFramePermissions": []
+}
