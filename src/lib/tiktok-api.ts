@@ -123,10 +123,10 @@ export const tiktokApi = {
       method: 'DELETE',
     });
   },
-  async uploadImage(file: File) {
+  async uploadImage(file: File, purpose: 'payment-evidence' | 'product-image' | 'qris-image', orderId?: string, phone?: string) {
     const signed = await request<{ data: { path: string; token: string } }>('crud-tiktok-2', '', {
       method: 'POST',
-      body: JSON.stringify({ action: 'upload-url', content_type: file.type, size: file.size }),
+      body: JSON.stringify({ action: 'upload-url', purpose, order_id: orderId, nomor_penerima: phone, content_type: file.type, size: file.size }),
     });
     const { error } = await supabase.storage.from(bucket).uploadToSignedUrl(signed.data.path, signed.data.token, file, {
       contentType: file.type,
@@ -136,7 +136,7 @@ export const tiktokApi = {
     return signed.data.path;
   },
   async submitPaymentEvidence(orderId: string, phone: string, file: File) {
-    const path = await this.uploadImage(file);
+    const path = await this.uploadImage(file, 'payment-evidence', orderId, phone);
     return request('crud-tiktok-2', `?order_id=${encodeURIComponent(orderId)}&nomor_penerima=${encodeURIComponent(phone)}`, {
       method: 'PATCH',
       body: JSON.stringify({ payment_evidence_path: path }),
