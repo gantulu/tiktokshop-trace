@@ -249,11 +249,13 @@ const StorageImageInput = ({
   const [preview, setPreview] = useState(previewUrl || '');
   const previewObjectUrl = useRef<string | null>(null);
   useEffect(() => {
-    if (!value || previewUrl) {
+    if (!value) {
       if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
       previewObjectUrl.current = null;
-      setPreview(previewUrl || '');
+      setPreview('');
+      return;
     }
+    if (previewUrl && !previewObjectUrl.current) setPreview(previewUrl);
   }, [value, previewUrl]);
   useEffect(() => () => {
     if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
