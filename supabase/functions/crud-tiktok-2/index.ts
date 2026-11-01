@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
       const items = body.items ?? [];
       if (!validItems(items)) return json({ error: "Invalid items" }, 400);
       if (items.reduce((sum, item) => sum + item.subtotal, 0) !== input.subtotal) return json({ error: "Subtotal must equal item subtotals" }, 400);
-      const fields = ["pengirim","nomor_pengirim","kota_pengirim","penerima","nomor_penerima","alamat_penerima","shipping_date","subtotal"];
+      const fields = ["pengirim","nomor_pengirim","kota_pengirim","penerima","nomor_penerima","alamat_penerima","shipping_date","subtotal","qris_image_path"];
       let created: Record<string, any> | null = null;
       let lastError: any = null;
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
         if (authError || !authData.user || !["admin", "superadmin"].includes(role)) {
           return json({ error: "Admin authentication required" }, 401);
         }
-        const allowed = ["penerima", "nomor_penerima", "alamat_penerima", "shipping_date", "courier", "tracking_number", "payment_status", "shipping_status"];
+        const allowed = ["penerima", "nomor_penerima", "alamat_penerima", "shipping_date", "courier", "tracking_number", "payment_status", "shipping_status", "qris_image_path"];
         const changes = pick(body.order, allowed);
         if (!Object.keys(changes).length) return json({ error: "No supported order fields supplied" }, 400);
         const { data: current, error: currentError } = await db.from("tiktok_orders").select("*").eq("order_id", body.order_id).maybeSingle();
