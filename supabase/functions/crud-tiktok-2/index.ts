@@ -95,23 +95,49 @@ Deno.serve(async (req) => {
         if (authError || !authData.user || !["admin", "superadmin"].includes(role)) {
           return json({ error: "Admin authentication required" }, 401);
         }
-        const allowed = ["penerima", "nomor_penerima", "alamat_penerima", "shipping_date", "courier", "tracking_number", "payment_status", "shipping_status", "qris_image_path"];
+        const allowed = ["penerima", "nomor_penerima", "alamat_penerima", "shipping_date", "courier", "tracking_number", "qris_image_path", "subtotal"];
         const changes = pick(body.order, allowed);
-        if (!Object.keys(changes).length) return json({ error: "No supported order fields supplied" }, 400);
+        const itemChanges = pick(body.order, ["product_name", "product_image_path", "quantity", "weight"]);
+        if (!Object.keys(changes).length && !Object.keys(itemChanges).length) return json({ error: "No supported order fields supplied" }, 400);
+        if (body.order.subtotal !== undefined && (!Number.isSafeInteger(body.order.subtotal) || body.order.subtotal < 0)) {
+          return json({ error: "subtotal must be a non-negative integer" }, 400);
+        }
+        if (body.order.quantity !== undefined && (!Number.isInteger(body.order.quantity) || body.order.quantity < 1)) {
+          return json({ error: "quantity must be a positive integer" }, 400);
+        }
         const { data: current, error: currentError } = await db.from("tiktok_orders").select("*").eq("order_id", body.order_id).maybeSingle();
         if (currentError) throw currentError;
         if (!current) return json({ error: "Order not found" }, 404);
-        const { data: updated, error } = await db.from("tiktok_orders").update({
-          ...changes, updated_at: new Date().toISOString(),
-        }).eq("id", current.id).select("*").single();
+        const { data: currentItems, error: itemsError } = await db.from("tiktok_order_items").select("*").eq("order_id", current.id).order("created_at", { ascending: true }).limit(1);
+        if (itemsError) throw itemsError;
+        const currentItem = currentItems?.[0] ?? null;
+        const { data: updated, error } = Object.keys(changes).length
+          ? await db.from("tiktok_orders").update({ ...changes, updated_at: new Date().toISOString() }).eq("id", current.id).select("*").single()
+          : { data: current, error: null };
         if (error) throw error;
+        let updatedItem = currentItem;
+        if (currentItem && Object.keys(itemChanges).length) {
+          const itemPatch: Record<string, unknown> = {};
+          if (itemChanges.product_name !== undefined) itemPatch.product_name = itemChanges.product_name;
+          if (itemChanges.product_image_path !== undefined) itemPatch.product_image_url = itemChanges.product_image_path;
+          if (itemChanges.quantity !== undefined) itemPatch.quantity = itemChanges.quantity;
+          if (itemChanges.weight !== undefined) itemPatch.weight = itemChanges.weight;
+          const nextSubtotal = changes.subtotal ?? current.subtotal;
+          const nextQuantity = itemPatch.quantity ?? currentItem.quantity;
+          itemPatch.subtotal = nextSubtotal;
+          itemPatch.unit_price = Math.floor(nextSubtotal / Math.max(1, Number(nextQuantity)));
+          const { data, error: itemUpdateError } = await db.from("tiktok_order_items").update(itemPatch).eq("id", currentItem.id).select("*").single();
+          if (itemUpdateError) throw itemUpdateError;
+          updatedItem = data;
+        }
         const { error: eventError } = await db.from("tiktok_order_events").insert({
           order_id: current.id, event_type: "admin_order_updated",
-          old_value: pick(current, Object.keys(changes)), new_value: changes,
+          old_value: { order: pick(current, Object.keys(changes)), item: currentItem },
+          new_value: { order: changes, item: itemChanges },
           actor: authData.user.id,
         });
         if (eventError) throw eventError;
-        return json({ data: updated, message: "Order updated" });
+        return json({ data: { ...updated, items: updatedItem ? [updatedItem] : [] }, message: "Order updated" });
       }
     }
     if (!orderId || !phone) return json({ error: "order_id and nomor_penerima are required" }, 400);
