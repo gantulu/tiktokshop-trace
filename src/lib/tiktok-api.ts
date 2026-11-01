@@ -26,7 +26,7 @@ async function request<T>(fn: string, path = '', init: RequestInit = {}): Promis
   return payload as T;
 }
 
-const toLegacy = (order: any) => ({
+const toLegacy = async (order: any) => ({
   id: order.id,
   fields: {
     order_id: order.order_id,
@@ -41,28 +41,36 @@ const toLegacy = (order: any) => ({
     nomor_resi: order.tracking_number ?? '',
     produk_subtotal: order.subtotal ?? 0,
     produk_name: order.items?.[0]?.product_name ?? '',
-    produk_img: order.items?.[0]?.product_image_url ?? '',
+    produk_img: order.items?.[0]?.product_image_url ? await signedImage(order.items[0].product_image_url) : '',
     produk_jumlah: order.items?.[0]?.quantity ?? 1,
     produk_weight: order.items?.[0]?.weight ?? '',
     payment_status: order.payment_status,
     shipping_status: order.shipping_status,
+    konfirmasi_qris_img: order.qris_image_path ? await signedImage(order.qris_image_path) : '',
+    qris_image_path: order.qris_image_path ?? null,
     payment_evidence_path: order.payment_evidence_path ?? null,
     payment_evidence_url: order.payment_evidence_url ?? null,
     created_at: order.created_at,
   },
 });
 
+async function signedImage(path: string) {
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
 export const tiktokApi = {
   async getAllOrders() {
     const result = await request<{ data: any[] }>('get-tiktok', '?mode=admin&page=1&limit=100');
-    return (result.data ?? []).map(toLegacy);
+    return Promise.all((result.data ?? []).map(toLegacy));
   },
   async getOrderById(orderId: string, phone: string) {
     const result = await request<{ data: any }>(
       'get-tiktok',
       `?order_id=${encodeURIComponent(orderId)}&nomor_penerima=${encodeURIComponent(phone)}`,
     );
-    return result.data ? toLegacy(result.data) : null;
+    return result.data ? await toLegacy(result.data) : null;
   },
   async createOrder(fields: Record<string, any>) {
     const quantity = Number(fields.produk_jumlah || 1);
