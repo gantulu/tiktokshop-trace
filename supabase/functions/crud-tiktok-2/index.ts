@@ -42,7 +42,26 @@ Deno.serve(async (req) => {
       if (body.action === "upload-url") {
         if (typeof body.content_type !== "string" || !ALLOWED_TYPES.has(body.content_type)) return json({ error: "Only JPEG, PNG, and WebP are allowed" }, 415);
         if (!Number.isInteger(body.size) || body.size < 1 || body.size > MAX_IMAGE_BYTES) return json({ error: "Image must be 5 MB or smaller" }, 413);
-        const path = `orders/${crypto.randomUUID()}.${extension(body.content_type)}`;
+        const purpose = body.purpose;
+        if (!["payment-evidence", "product-image", "qris-image"].includes(purpose)) return json({ error: "Invalid image purpose" }, 400);
+        let pathPrefix = "";
+        if (purpose === "payment-evidence") {
+          const orderIdForUpload = typeof body.order_id === "string" ? body.order_id.trim() : "";
+          const phoneForUpload = typeof body.nomor_penerima === "string" ? body.nomor_penerima.trim() : "";
+          if (!orderIdForUpload || !phoneForUpload) return json({ error: "Order ID and recipient phone are required" }, 400);
+          const { data: targetOrder, error: targetError } = await db.from("tiktok_orders").select("id, payment_status").eq("order_id", orderIdForUpload).eq("nomor_penerima", phoneForUpload).maybeSingle();
+          if (targetError) throw targetError;
+          if (!targetOrder || targetOrder.payment_status !== "pending") return json({ error: "Order not found or payment is not pending" }, 404);
+          pathPrefix = `orders/${targetOrder.id}/payment-evidence`;
+        } else {
+          const token = req.headers.get("authorization")?.replace(/^Bearer\\s+/i, "");
+          if (!token) return json({ error: "Admin authentication required" }, 401);
+          const { data: authData, error: authError } = await db.auth.getUser(token);
+          const role = authData.user?.app_metadata?.role;
+          if (authError || !authData.user || !["admin", "superadmin"].includes(role)) return json({ error: "Admin authentication required" }, 401);
+          pathPrefix = purpose === "product-image" ? "products" : "qris";
+        }
+        const path = `${pathPrefix}/${crypto.randomUUID()}.${extension(body.content_type)}`;
         const { data, error } = await db.storage.from(BUCKET).createSignedUploadUrl(path, { upsert: false });
         if (error) throw error;
         return json({ data: { bucket: BUCKET, path, token: data.token, signedUrl: data.signedUrl } }, 201);
