@@ -42,6 +42,7 @@ const toLegacy = async (order: any) => ({
     produk_subtotal: order.subtotal ?? 0,
     produk_name: order.items?.[0]?.product_name ?? '',
     produk_img: order.items?.[0]?.product_image_url ? await signedImage(order.items[0].product_image_url) : '',
+    produk_img_path: order.items?.[0]?.product_image_url ?? '',
     produk_jumlah: order.items?.[0]?.quantity ?? 1,
     produk_weight: order.items?.[0]?.weight ?? '',
     payment_status: order.payment_status,
@@ -90,7 +91,7 @@ export const tiktokApi = {
         },
         items: [{
           product_name: fields.produk_name,
-          product_image_url: fields.produk_img || null,
+          product_image_url: fields.produk_img_path || null,
           quantity,
           weight: fields.produk_weight || null,
           unit_price: Math.floor(subtotal / Math.max(quantity, 1)),
