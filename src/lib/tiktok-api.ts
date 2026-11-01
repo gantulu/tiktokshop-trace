@@ -114,6 +114,7 @@ export const tiktokApi = {
           courier: fields.kurir,
           tracking_number: fields.nomor_resi,
           shipping_date: fields.shipping_date,
+          qris_image_path: fields.qris_image_path || null,
         },
       }),
     });
