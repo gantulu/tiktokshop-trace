@@ -459,6 +459,7 @@ const OrdersView = ({ orderId, phone, navigate, showToast }: { orderId: string; 
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [paymentUploading, setPaymentUploading] = useState(false);
 
   const fetchOrder = async () => {
     setLoading(true);
@@ -480,6 +481,23 @@ const OrdersView = ({ orderId, phone, navigate, showToast }: { orderId: string; 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     showToast(`${label} disalin!`);
+  };
+  const handlePaymentEvidence = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setPaymentUploading(true);
+    try {
+      await tiktokApi.submitPaymentEvidence(orderId, phone, file);
+      showToast('Bukti pembayaran berhasil diunggah!');
+      setDrawerOpen(false);
+      await fetchOrder();
+    } catch (error) {
+      console.error(error);
+      showToast(error instanceof Error ? error.message : 'Gagal mengunggah bukti pembayaran');
+    } finally {
+      setPaymentUploading(false);
+      event.target.value = '';
+    }
   };
 
   const handleDownloadQR = async () => {
@@ -708,7 +726,7 @@ const OrdersView = ({ orderId, phone, navigate, showToast }: { orderId: string; 
           </div>
 
           <div className="space-y-3">
-            <Button onClick={() => { setDrawerOpen(false); showToast("Konfirmasi terkirim!"); }} variant="primary">Konfirmasi Pembayaran</Button>
+            <label className="block w-full text-center bg-[#FE2C55] text-white rounded-lg py-3 font-semibold cursor-pointer">{paymentUploading ? "Mengunggah..." : "Upload Bukti Pembayaran"}<input type="file" className="hidden" accept="image/jpeg,image/png,image/webp" onChange={handlePaymentEvidence} disabled={paymentUploading} /></label>
             <Button onClick={() => setDrawerOpen(false)} variant="ghost">Batal</Button>
           </div>
         </div>
@@ -813,7 +831,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
           <ShieldCheck className="w-8 h-8 text-[#FE2C55]" />
         </div>
         <h3 className="text-lg font-bold text-[#161823] mb-2">Akses Admin</h3>
-        <p className="text-[#8A8B91] mb-8 text-[14px]">Silakan masukkan kata sandi untuk mengakses panel manajemen.</p>
+        <p className="text-[#8A8B91] mb-8 text-[14px]">Masuk menggunakan akun Admin Supabase yang memiliki role admin atau superadmin.</p>
         
         <form onSubmit={async (e) => {
           e.preventDefault();
@@ -930,7 +948,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
             <h4 className="text-[11px] font-bold text-[#8A8B91] uppercase tracking-widest border-b border-[#F1F1F2] pb-1">Detail Produk</h4>
             <Input label="Order ID" value={form.order_id} onChange={e => setForm({...form, order_id: e.target.value})} required />
             <Input label="Nama Produk" value={form.produk_name} onChange={e => setForm({...form, produk_name: e.target.value})} required />
-            <StorageImageInput label="Gambar Produk (Supabase Storage)" value={form.produk_img || ''} onChange={path => setForm({...form, produk_img: path})} />
+            <StorageImageInput label="Gambar Produk (Supabase Storage)" value={form.produk_img_path || ''} onChange={path => setForm({...form, produk_img_path: path})} />
             <div className="grid grid-cols-2 gap-4">
               <Input label="Jumlah" type="number" value={form.produk_jumlah} onChange={e => setForm({...form, produk_jumlah: e.target.value})} required />
               <Input label="Berat" value={form.produk_weight} onChange={e => setForm({...form, produk_weight: e.target.value})} placeholder="Contoh: 300gr" />
