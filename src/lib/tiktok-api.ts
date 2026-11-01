@@ -87,6 +87,7 @@ export const tiktokApi = {
           nomor_penerima: fields.nomor_penerima,
           alamat_penerima: fields.alamat_penerima,
           shipping_date: fields.shipping_date || null,
+          qris_image_path: fields.qris_image_path || null,
           subtotal,
         },
         items: [{
