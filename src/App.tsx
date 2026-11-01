@@ -353,10 +353,11 @@ const BottomDrawer = ({ isOpen, onClose, children, title }: { isOpen: boolean; o
 
 const HomeView = ({ navigate }: { navigate: (path: string) => void }) => {
   const [orderId, setOrderId] = useState('');
+  const [recipientPhone, setRecipientPhone] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (orderId.trim()) navigate(`/orderview/${orderId.trim()}`);
+    if (orderId.trim() && recipientPhone.trim()) navigate(`/orderview/${encodeURIComponent(orderId.trim())}/${encodeURIComponent(recipientPhone.trim())}`);
   };
 
   return (
@@ -391,7 +392,7 @@ const HomeView = ({ navigate }: { navigate: (path: string) => void }) => {
             <span className="text-[#FE2C55]">TikTok Shop</span>
           </h1>
           <p className="text-[#8A8B91] text-[14px] leading-relaxed">
-            Masukkan nomor pesanan Anda untuk melihat status pengiriman dan detail paket secara real-time.
+            Masukkan nomor pesanan dan nomor WhatsApp penerima untuk melihat detail paket.
           </p>
         </div>
 
@@ -410,6 +411,12 @@ const HomeView = ({ navigate }: { navigate: (path: string) => void }) => {
                   className="w-full pl-12 pr-4 py-3.5 bg-[#F1F1F2] border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FE2C55]/20 focus:bg-white focus:border-[#FE2C55] transition-all text-[#161823] text-[15px] font-medium placeholder:text-[#BBBCC0]"
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[13px] font-bold text-[#161823] ml-1">Nomor WhatsApp Penerima</label>
+              <input type="tel" value={recipientPhone} onChange={e => setRecipientPhone(e.target.value)} required
+                placeholder="Contoh: 081234567890"
+                className="w-full px-4 py-3.5 bg-[#F1F1F2] rounded-xl text-[15px] focus:outline-none focus:ring-2 focus:ring-[#FE2C55]/20" />
             </div>
             <Button type="submit" className="py-4 rounded-xl text-[16px]">Lacak Sekarang</Button>
           </form>
@@ -448,31 +455,17 @@ const HomeView = ({ navigate }: { navigate: (path: string) => void }) => {
   );
 };
 
-const OrdersView = ({ orderId, navigate, showToast }: { orderId: string; navigate: (path: string) => void; showToast: (msg: string) => void }) => {
+const OrdersView = ({ orderId, phone, navigate, showToast }: { orderId: string; phone: string; navigate: (path: string) => void; showToast: (msg: string) => void }) => {
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [isEditRecipientOpen, setIsEditRecipientOpen] = useState(false);
-  const [recipientForm, setRecipientForm] = useState({
-    penerima: '',
-    nomor_penerima: '',
-    alamat_penerima: ''
-  });
 
   const fetchOrder = async () => {
     setLoading(true);
     try {
-      const data = await tiktokApi.getOrderById(orderId);
+      const data = await tiktokApi.getOrderById(orderId, phone);
       setOrder(data);
-      if (data) {
-        setRecipientForm({
-          penerima: data.fields.penerima || '',
-          nomor_penerima: data.fields.nomor_penerima || '',
-          alamat_penerima: data.fields.alamat_penerima || ''
-        });
-      } else {
-        showToast("Pesanan tidak ditemukan!");
-      }
+      if (!data) showToast("Pesanan tidak ditemukan!");
     } catch (err) { 
       console.error(err);
       showToast("Gagal mengambil data pesanan!");
@@ -482,24 +475,7 @@ const OrdersView = ({ orderId, navigate, showToast }: { orderId: string; navigat
 
   useEffect(() => {
     fetchOrder();
-  }, [orderId]);
-
-  const handleUpdateRecipient = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!order) return;
-    setLoading(true);
-    try {
-      await tiktokApi.updateOrder(order.id, recipientForm);
-      showToast("Alamat diperbarui!");
-      setIsEditRecipientOpen(false);
-      fetchOrder();
-    } catch (err) {
-      console.error(err);
-      showToast("Gagal memperbarui!");
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [orderId, phone]);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -613,12 +589,7 @@ const OrdersView = ({ orderId, navigate, showToast }: { orderId: string; navigat
             <div className="flex-1">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[14px] font-bold text-[#161823]">Alamat Pengiriman</span>
-                <button 
-                  onClick={() => setIsEditRecipientOpen(true)}
-                  className="p-1 text-[#8A8B91] hover:text-[#FE2C55] transition-colors"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </button>
+
               </div>
               <div className="text-[13px] font-bold text-[#161823] mb-1">{fields.penerima} | {fields.nomor_penerima}</div>
               <p className="text-[12px] text-[#8A8B91] leading-relaxed">{fields.alamat_penerima}</p>
@@ -743,37 +714,13 @@ const OrdersView = ({ orderId, navigate, showToast }: { orderId: string; navigat
         </div>
       </BottomDrawer>
 
-      <BottomDrawer isOpen={isEditRecipientOpen} onClose={() => setIsEditRecipientOpen(false)} title="Edit Penerima">
-        <form onSubmit={handleUpdateRecipient} className="space-y-6 pb-10">
-          <div className="space-y-4">
-            <Input 
-              label="Nama Penerima" 
-              value={recipientForm.penerima} 
-              onChange={e => setRecipientForm({...recipientForm, penerima: e.target.value})} 
-              required 
-            />
-            <Input 
-              label="Nomor WhatsApp" 
-              value={recipientForm.nomor_penerima} 
-              onChange={e => setRecipientForm({...recipientForm, nomor_penerima: e.target.value})} 
-              required 
-            />
-            <Input 
-              label="Alamat Lengkap" 
-              value={recipientForm.alamat_penerima} 
-              onChange={e => setRecipientForm({...recipientForm, alamat_penerima: e.target.value})} 
-              required 
-            />
-          </div>
-          <Button type="submit" disabled={loading}>{loading ? 'Menyimpan...' : 'Simpan Perubahan'}</Button>
-        </form>
-      </BottomDrawer>
     </motion.div>
   );
 };
 
 const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; showToast: (msg: string) => void }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -782,7 +729,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
   const [searchQuery, setSearchQuery] = useState('');
   const [form, setForm] = useState<any>({
     order_id: '', produk_name: '', produk_img: '', produk_jumlah: '', produk_weight: '', produk_subtotal: '',
-    konfirmasi_qris_img: '', pengirim: '', nomor_pengirim: '', kota_pengirim: '', penerima: '', nomor_penerima: '',
+    konfirmasi_qris_img: '', qris_image_path: '', pengirim: '', nomor_pengirim: '', kota_pengirim: '', penerima: '', nomor_penerima: '',
     alamat_penerima: '', shipping_date: '', nomor_resi: '', kurir: ''
   });
 
@@ -799,7 +746,12 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchOrders(); }, []);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const role = data.session?.user.app_metadata?.role;
+      if (data.session && ['admin', 'superadmin'].includes(role)) setIsAuthenticated(true);
+    });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -807,7 +759,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
     const payload = { ...form, produk_jumlah: Number(form.produk_jumlah), produk_subtotal: Number(form.produk_subtotal) };
     try {
       if (editingId) {
-        await tiktokApi.updateOrder(editingId, payload);
+        await tiktokApi.updateOrder(form.order_id, payload);
         showToast("Pesanan diperbarui!");
       } else {
         await tiktokApi.createOrder(payload);
@@ -826,7 +778,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
     if (window.confirm("Hapus pesanan ini?")) {
       setLoading(true);
       try {
-        await tiktokApi.deleteOrder(id);
+        throw new Error('Penghapusan permanen dinonaktifkan. Gunakan pembatalan pesanan.');
         showToast("Pesanan dihapus!");
         fetchOrders();
       } catch (err) {
@@ -862,22 +814,21 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
         <h3 className="text-lg font-bold text-[#161823] mb-2">Akses Admin</h3>
         <p className="text-[#8A8B91] mb-8 text-[14px]">Silakan masukkan kata sandi untuk mengakses panel manajemen.</p>
         
-        <form onSubmit={(e) => {
+        <form onSubmit={async (e) => {
           e.preventDefault();
-          if (passwordInput === 'S@andiku2547') {
-            setIsAuthenticated(true);
-            showToast("Login berhasil!");
-          } else {
-            showToast("Kata sandi salah!");
+          const { data, error } = await supabase.auth.signInWithPassword({ email: emailInput, password: passwordInput });
+          const role = data.user?.app_metadata?.role;
+          if (error || !data.user || !['admin', 'superadmin'].includes(role)) {
+            await supabase.auth.signOut();
+            showToast("Login Admin gagal atau role tidak valid!");
+            return;
           }
+          setIsAuthenticated(true);
+          showToast("Login Admin berhasil!");
+          fetchOrders();
         }} className="w-full space-y-4">
-          <Input 
-            type="password" 
-            placeholder="Kata Sandi" 
-            value={passwordInput} 
-            onChange={(e) => setPasswordInput(e.target.value)} 
-            icon={ShieldCheck}
-          />
+          <Input type="email" placeholder="Email Admin" value={emailInput} onChange={e => setEmailInput(e.target.value)} required />
+          <Input type="password" placeholder="Kata Sandi" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} required icon={ShieldCheck} />
           <Button type="submit">Masuk</Button>
           <Button onClick={() => navigate('/')} variant="ghost">Batal</Button>
         </form>
@@ -978,7 +929,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
             <h4 className="text-[11px] font-bold text-[#8A8B91] uppercase tracking-widest border-b border-[#F1F1F2] pb-1">Detail Produk</h4>
             <Input label="Order ID" value={form.order_id} onChange={e => setForm({...form, order_id: e.target.value})} required />
             <Input label="Nama Produk" value={form.produk_name} onChange={e => setForm({...form, produk_name: e.target.value})} required />
-            <StorageImageInput label="URL Gambar" value={form.produk_img} onChange={url => setForm({...form, produk_img: url})} placeholder="Upload atau masukkan URL..." />
+            <StorageImageInput label="Gambar Produk (Supabase Storage)" value={form.produk_img || ''} onChange={path => setForm({...form, produk_img: path})} />
             <div className="grid grid-cols-2 gap-4">
               <Input label="Jumlah" type="number" value={form.produk_jumlah} onChange={e => setForm({...form, produk_jumlah: e.target.value})} required />
               <Input label="Berat" value={form.produk_weight} onChange={e => setForm({...form, produk_weight: e.target.value})} placeholder="Contoh: 300gr" />
@@ -1015,7 +966,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
           <div className="space-y-4">
             <h4 className="text-[11px] font-bold text-[#8A8B91] uppercase tracking-widest border-b border-[#F1F1F2] pb-1">Pembayaran</h4>
             <Input label="Total Harga (Subtotal)" type="number" value={form.produk_subtotal} onChange={e => setForm({...form, produk_subtotal: e.target.value})} required />
-            <StorageImageInput label="URL QRIS" value={form.konfirmasi_qris_img} onChange={url => setForm({...form, konfirmasi_qris_img: url})} placeholder="Upload atau masukkan URL..." />
+            <StorageImageInput label="Gambar QRIS (Supabase Storage)" value={form.qris_image_path || ''} onChange={path => setForm({...form, qris_image_path: path})} />
           </div>
           
           <Button type="submit" disabled={loading}>{loading ? 'Menyimpan...' : 'Simpan Pesanan'}</Button>
@@ -1100,7 +1051,9 @@ export default function App() {
 
   if (currentPath.startsWith('#/orderview/')) {
     Component = OrdersView;
-    params.orderId = currentPath.replace('#/orderview/', '');
+    const parts = currentPath.replace('#/orderview/', '').split('/');
+    params.orderId = decodeURIComponent(parts[0] || '');
+    params.phone = decodeURIComponent(parts[1] || '');
   } else if (currentPath === '#/admin') Component = AdminView;
   else Component = HomeView;
 
