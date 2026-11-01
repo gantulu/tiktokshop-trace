@@ -57,8 +57,23 @@ const toLegacy = (order: any) => ({
 
 export const tiktokApi = {
   async getAllOrders() {
-    const result = await request<{ data: any[] }>('get-tiktok', '?mode=admin&page=1&limit=100');
-    return (result.data ?? []).map(toLegacy);
+    const limit = 100;
+    const allOrders: any[] = [];
+    let page = 1;
+    let totalPages = 1;
+
+    do {
+      const result = await request<{
+        data: any[];
+        pagination: { page: number; total_pages: number };
+      }>('get-tiktok', `?mode=admin&page=${page}&limit=${limit}`);
+
+      allOrders.push(...(result.data ?? []));
+      totalPages = Math.max(1, Number(result.pagination?.total_pages) || 1);
+      page += 1;
+    } while (page <= totalPages);
+
+    return allOrders.map(toLegacy);
   },
   async getOrderById(orderId: string, phone: string) {
     const result = await request<{ data: any }>(
