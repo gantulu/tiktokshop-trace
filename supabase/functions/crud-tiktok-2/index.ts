@@ -169,7 +169,7 @@ Deno.serve(async (req) => {
     if (req.method === "PATCH") {
       const body = await req.json();
       const path = isObject(body) && typeof body.payment_evidence_path === "string" ? body.payment_evidence_path.trim() : "";
-      if (!path.startsWith("orders/")) return json({ error: "Valid payment_evidence_path is required" }, 400);
+      if (!path.startsWith(`orders/${order.id}/payment-evidence/`)) return json({ error: "Evidence path does not belong to this order" }, 400);
       const { data: updated, error } = await db.from("tiktok_orders")
         .update({ payment_evidence_path: path, updated_at: new Date().toISOString() })
         .eq("id", order.id).eq("payment_status", "pending")
