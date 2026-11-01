@@ -38,3 +38,11 @@ Allowed image types: JPEG, PNG, WebP. Maximum size: 5 MB.
 ## Customer order lookup
 
 Customers must provide both the generated order ID and the recipient phone number. The API verifies both values before returning order details.
+
+## Verification
+
+- `npm run lint` — TypeScript check for the frontend.
+- `deno check supabase/functions/get-tiktok/index.ts supabase/functions/crud-tiktok-2/index.ts` — type-checks the Supabase Edge Functions.
+- `npm run build` — production Vite build.
+
+GitHub Actions runs these checks for pull requests targeting `main` and pushes to the migration branch.
