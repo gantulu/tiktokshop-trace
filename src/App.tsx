@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { tiktokApi, supabase } from './lib/tiktok-api';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
@@ -155,76 +156,7 @@ const formatRupiah = (value: number) => {
   }).format(value || 0);
 };
 
-const API_URL = 'https://api.airtable.com/v0/appvpSgTiYtxO4U1H/tiktok';
-const HEADERS = {
-  'Authorization': 'Bearer patRWehkBaP6g4SUZ.071d08fec0c5d8cbecb2b340a753eef28ed4f2048cd84a578ee591bb85dc577b',
-  'Content-Type': 'application/json'
-};
-
-const airtable = {
-  getAllOrders: async () => {
-    try {
-      const res = await fetch(API_URL, { headers: HEADERS });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data = await res.json();
-      return data.records || [];
-    } catch (e) {
-      console.error("Airtable getAllOrders failed:", e);
-      throw e;
-    }
-  },
-  getOrderById: async (order_id: string) => {
-    try {
-      const formula = encodeURIComponent(`{order_id}="${order_id}"`);
-      const res = await fetch(`${API_URL}?filterByFormula=${formula}`, { headers: HEADERS });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data = await res.json();
-      return data.records && data.records.length > 0 ? data.records[0] : null;
-    } catch (e) {
-      console.error("Airtable getOrderById failed:", e);
-      throw e;
-    }
-  },
-  createOrder: async (data: any) => {
-    try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: HEADERS,
-        body: JSON.stringify({ records: [{ fields: data }] })
-      });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      return await res.json();
-    } catch (e) {
-      console.error("Airtable createOrder failed:", e);
-      throw e;
-    }
-  },
-  updateOrder: async (id: string, data: any) => {
-    try {
-      const res = await fetch(API_URL, {
-        method: 'PATCH',
-        headers: HEADERS,
-        body: JSON.stringify({ records: [{ id, fields: data }] })
-      });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      return await res.json();
-    } catch (e) {
-      console.error("Airtable updateOrder failed:", e);
-      throw e;
-    }
-  },
-  deleteOrder: async (id: string) => {
-    try {
-      const res = await fetch(`${API_URL}/${id}`, { method: 'DELETE', headers: HEADERS });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      return await res.json();
-    } catch (e) {
-      console.error("Airtable deleteOrder failed:", e);
-      throw e;
-    }
-  }
-};
-
+// All persistence and uploads go through Supabase Edge Functions / Storage.
 // ==========================================
 // 3. REUSABLE COMPONENTS
 // ==========================================
@@ -308,83 +240,49 @@ const Input = ({ label, type = 'text', name, value, onChange, placeholder, requi
   </div>
 );
 
-const CloudinaryInput = ({ 
-  label, 
-  value, 
-  onChange, 
-  placeholder 
-}: { 
-  label: string; 
-  value: string; 
-  onChange: (url: string) => void; 
-  placeholder?: string; 
+const StorageImageInput = ({
+  label, value, onChange, placeholder
+}: {
+  label: string; value: string; onChange: (path: string) => void; placeholder?: string;
 }) => {
   const [uploading, setUploading] = useState(false);
-  const cloudName = 'daj5cu840';
-  const uploadPreset = 'webflow';
-
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const [preview, setPreview] = useState('');
+  useEffect(() => {
+    let active = true;
+    if (!value) { setPreview(''); return; }
+    tiktokApi.getImageUrl(value).then(url => { if (active) setPreview(url); }).catch(() => setPreview(''));
+    return () => { active = false; };
+  }, [value]);
+  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
-
     setUploading(true);
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', uploadPreset);
-
     try {
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
-      if (data.secure_url) {
-        onChange(data.secure_url);
-      }
-    } catch (err) {
-      console.error('Upload failed:', err);
+      const path = await tiktokApi.uploadImage(file);
+      onChange(path);
+    } catch (error) {
+      console.error('Supabase Storage upload failed:', error);
+      alert(error instanceof Error ? error.message : 'Gagal mengunggah gambar');
     } finally {
       setUploading(false);
+      event.target.value = '';
     }
   };
-
   return (
     <div className="mb-4">
       <label className="block text-[13px] font-bold text-[#161823] mb-2 ml-1">{label}</label>
       <div className="relative group flex gap-2">
-        <div className="relative flex-1">
-          <input
-            type="text"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
-            className="w-full px-4 py-2.5 bg-[#F1F1F2] border border-transparent rounded-md focus:outline-none focus:ring-1 focus:ring-[#FE2C55] focus:bg-white focus:border-[#FE2C55] transition-all text-[#161823] text-[14px] placeholder:text-[#BBBCC0]"
-          />
-          {uploading && (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2">
-               <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="w-4 h-4 border-2 border-gray-200 border-t-[#FE2C55] rounded-full" />
-            </div>
-          )}
-        </div>
+        <input type="text" value={value} readOnly placeholder={placeholder || 'Path gambar Supabase Storage'}
+          className="w-full px-4 py-2.5 bg-[#F1F1F2] border border-transparent rounded-md text-[#161823] text-[12px]" />
         <label className="cursor-pointer shrink-0">
-          <input type="file" className="hidden" onChange={handleUpload} accept="image/*" />
-          <div className="h-full px-3 flex items-center justify-center bg-[#F1F1F2] border border-transparent rounded-md hover:bg-gray-200 transition-colors">
-            <Plus className="w-5 h-5 text-[#8A8B91]" />
+          <input type="file" className="hidden" onChange={handleUpload} accept="image/jpeg,image/png,image/webp" />
+          <div className="h-full px-3 flex items-center justify-center bg-[#F1F1F2] rounded-md">
+            {uploading ? <span className="text-xs">Upload...</span> : <Plus className="w-5 h-5 text-[#8A8B91]" />}
           </div>
         </label>
       </div>
-      {value && (
-        <div className="mt-2 relative w-16 h-16 rounded-md overflow-hidden border border-[#F1F1F2] group/img">
-          <img src={value} className="w-full h-full object-cover" alt="preview" />
-          <button 
-            type="button"
-            onClick={() => onChange('')}
-            className="absolute top-0 right-0 p-0.5 bg-black/50 text-white opacity-0 group-hover/img:opacity-100 transition-opacity"
-          >
-            <X className="w-3 h-3" />
-          </button>
-        </div>
-      )}
+      {preview && <img src={preview} className="mt-2 w-20 h-20 rounded-md object-cover border" alt="Preview upload" />}
+      {value && <button type="button" onClick={() => onChange('')} className="mt-2 text-xs text-red-500">Hapus gambar</button>}
     </div>
   );
 };
@@ -564,7 +462,7 @@ const OrdersView = ({ orderId, navigate, showToast }: { orderId: string; navigat
   const fetchOrder = async () => {
     setLoading(true);
     try {
-      const data = await airtable.getOrderById(orderId);
+      const data = await tiktokApi.getOrderById(orderId);
       setOrder(data);
       if (data) {
         setRecipientForm({
@@ -591,7 +489,7 @@ const OrdersView = ({ orderId, navigate, showToast }: { orderId: string; navigat
     if (!order) return;
     setLoading(true);
     try {
-      await airtable.updateOrder(order.id, recipientForm);
+      await tiktokApi.updateOrder(order.id, recipientForm);
       showToast("Alamat diperbarui!");
       setIsEditRecipientOpen(false);
       fetchOrder();
@@ -891,7 +789,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
   const fetchOrders = async () => {
     setLoading(true);
     try { 
-      const data = await airtable.getAllOrders();
+      const data = await tiktokApi.getAllOrders();
       setOrders(data); 
     }
     catch (err) { 
@@ -909,10 +807,10 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
     const payload = { ...form, produk_jumlah: Number(form.produk_jumlah), produk_subtotal: Number(form.produk_subtotal) };
     try {
       if (editingId) {
-        await airtable.updateOrder(editingId, payload);
+        await tiktokApi.updateOrder(editingId, payload);
         showToast("Pesanan diperbarui!");
       } else {
-        await airtable.createOrder(payload);
+        await tiktokApi.createOrder(payload);
         showToast("Pesanan dibuat!");
       }
       setIsModalOpen(false);
@@ -928,7 +826,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
     if (window.confirm("Hapus pesanan ini?")) {
       setLoading(true);
       try {
-        await airtable.deleteOrder(id);
+        await tiktokApi.deleteOrder(id);
         showToast("Pesanan dihapus!");
         fetchOrders();
       } catch (err) {
@@ -1080,7 +978,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
             <h4 className="text-[11px] font-bold text-[#8A8B91] uppercase tracking-widest border-b border-[#F1F1F2] pb-1">Detail Produk</h4>
             <Input label="Order ID" value={form.order_id} onChange={e => setForm({...form, order_id: e.target.value})} required />
             <Input label="Nama Produk" value={form.produk_name} onChange={e => setForm({...form, produk_name: e.target.value})} required />
-            <CloudinaryInput label="URL Gambar" value={form.produk_img} onChange={url => setForm({...form, produk_img: url})} placeholder="Upload atau masukkan URL..." />
+            <StorageImageInput label="URL Gambar" value={form.produk_img} onChange={url => setForm({...form, produk_img: url})} placeholder="Upload atau masukkan URL..." />
             <div className="grid grid-cols-2 gap-4">
               <Input label="Jumlah" type="number" value={form.produk_jumlah} onChange={e => setForm({...form, produk_jumlah: e.target.value})} required />
               <Input label="Berat" value={form.produk_weight} onChange={e => setForm({...form, produk_weight: e.target.value})} placeholder="Contoh: 300gr" />
@@ -1117,7 +1015,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
           <div className="space-y-4">
             <h4 className="text-[11px] font-bold text-[#8A8B91] uppercase tracking-widest border-b border-[#F1F1F2] pb-1">Pembayaran</h4>
             <Input label="Total Harga (Subtotal)" type="number" value={form.produk_subtotal} onChange={e => setForm({...form, produk_subtotal: e.target.value})} required />
-            <CloudinaryInput label="URL QRIS" value={form.konfirmasi_qris_img} onChange={url => setForm({...form, konfirmasi_qris_img: url})} placeholder="Upload atau masukkan URL..." />
+            <StorageImageInput label="URL QRIS" value={form.konfirmasi_qris_img} onChange={url => setForm({...form, konfirmasi_qris_img: url})} placeholder="Upload atau masukkan URL..." />
           </div>
           
           <Button type="submit" disabled={loading}>{loading ? 'Menyimpan...' : 'Simpan Pesanan'}</Button>
