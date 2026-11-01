@@ -22,7 +22,13 @@ jobs:
           node-version: 20
       - name: Install dependencies
         run: npm install
-      - name: Type check
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type check frontend
         run: npm run lint
+      - name: Type check Edge Functions
+        run: deno check supabase/functions/get-tiktok/index.ts supabase/functions/crud-tiktok-2/index.ts
       - name: Production build
         run: npm run build
