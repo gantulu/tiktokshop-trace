@@ -134,6 +134,13 @@ export const tiktokApi = {
     if (error) throw error;
     return signed.data.path;
   },
+  async submitPaymentEvidence(orderId: string, phone: string, file: File) {
+    const path = await this.uploadImage(file);
+    return request('crud-tiktok-2', `?order_id=${encodeURIComponent(orderId)}&nomor_penerima=${encodeURIComponent(phone)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ payment_evidence_path: path }),
+    });
+  },
   async getImageUrl(path: string) {
     const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
     if (error) throw error;
