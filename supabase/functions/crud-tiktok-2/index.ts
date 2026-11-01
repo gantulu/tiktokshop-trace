@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
           if (!targetOrder || targetOrder.payment_status !== "pending") return json({ error: "Order not found or payment is not pending" }, 404);
           pathPrefix = `orders/${targetOrder.id}/payment-evidence`;
         } else {
-          const token = req.headers.get("authorization")?.replace(/^Bearer\\s+/i, "");
+          const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
           if (!token) return json({ error: "Admin authentication required" }, 401);
           const { data: authData, error: authError } = await db.auth.getUser(token);
           const role = authData.user?.app_metadata?.role;
