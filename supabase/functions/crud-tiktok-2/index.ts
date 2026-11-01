@@ -86,6 +86,34 @@ Deno.serve(async (req) => {
       }
       return json({ data: created, message: "Order created" }, 201);
     }
+    if (req.method === "PATCH") {
+      const body = await req.json();
+      const token = req.headers.get("authorization")?.replace(/^Bearer\\s+/i, "");
+      if (token && isObject(body) && typeof body.order_id === "string" && isObject(body.order)) {
+        const { data: authData, error: authError } = await db.auth.getUser(token);
+        const role = authData.user?.app_metadata?.role;
+        if (authError || !authData.user || !["admin", "superadmin"].includes(role)) {
+          return json({ error: "Admin authentication required" }, 401);
+        }
+        const allowed = ["penerima", "nomor_penerima", "alamat_penerima", "shipping_date", "courier", "tracking_number", "payment_status", "shipping_status"];
+        const changes = pick(body.order, allowed);
+        if (!Object.keys(changes).length) return json({ error: "No supported order fields supplied" }, 400);
+        const { data: current, error: currentError } = await db.from("tiktok_orders").select("*").eq("order_id", body.order_id).maybeSingle();
+        if (currentError) throw currentError;
+        if (!current) return json({ error: "Order not found" }, 404);
+        const { data: updated, error } = await db.from("tiktok_orders").update({
+          ...changes, updated_at: new Date().toISOString(),
+        }).eq("id", current.id).select("*").single();
+        if (error) throw error;
+        const { error: eventError } = await db.from("tiktok_order_events").insert({
+          order_id: current.id, event_type: "admin_order_updated",
+          old_value: pick(current, Object.keys(changes)), new_value: changes,
+          actor: authData.user.id,
+        });
+        if (eventError) throw eventError;
+        return json({ data: updated, message: "Order updated" });
+      }
+    }
     if (!orderId || !phone) return json({ error: "order_id and nomor_penerima are required" }, 400);
     const { data: order, error: lookupError } = await db.from("tiktok_orders")
       .select("id, order_id, nomor_penerima, payment_status, shipping_status")
