@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
   if (!orderId || !phone) return json({ error: "order_id and nomor_penerima are required" }, 400);
   if (orderId.length > 100 || phone.length > 30) return json({ error: "Invalid lookup parameters" }, 400);
   const { data: order, error } = await client.from("tiktok_orders")
-    .select("id, order_id, pengirim, nomor_pengirim, kota_pengirim, penerima, nomor_penerima, alamat_penerima, shipping_date, courier, tracking_number, subtotal, payment_status, shipping_status, payment_evidence_path, created_at, updated_at")
+    .select("id, order_id, pengirim, nomor_pengirim, kota_pengirim, penerima, nomor_penerima, alamat_penerima, shipping_date, courier, tracking_number, subtotal, payment_status, shipping_status, payment_evidence_path, qris_image_path, created_at, updated_at")
     .eq("order_id", orderId).eq("nomor_penerima", phone).maybeSingle();
   if (error) {
     console.error("get-tiktok lookup:", error.message);
@@ -74,9 +74,14 @@ Deno.serve(async (req) => {
   ]);
   if (itemError || eventError) return json({ error: "Unable to retrieve order details" }, 500);
   let evidenceUrl: string | null = null;
+  let qrisUrl: string | null = null;
   if (order.payment_evidence_path) {
     const { data } = await client.storage.from("tiktok-order-images").createSignedUrl(order.payment_evidence_path, 3600);
     evidenceUrl = data?.signedUrl ?? null;
   }
-  return json({ data: { ...order, payment_evidence_url: evidenceUrl, items: items ?? [], events: events ?? [] } });
+  if (order.qris_image_path) {
+    const { data } = await client.storage.from("tiktok-order-images").createSignedUrl(order.qris_image_path, 3600);
+    qrisUrl = data?.signedUrl ?? null;
+  }
+  return json({ data: { ...order, payment_evidence_url: evidenceUrl, qris_image_url: qrisUrl, items: items ?? [], events: events ?? [] } });
 });
