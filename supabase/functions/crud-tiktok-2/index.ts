@@ -105,9 +105,12 @@ Deno.serve(async (req) => {
       }
       return json({ data: created, message: "Order created" }, 201);
     }
+    let patchBody: Record<string, any> = {};
     if (req.method === "PATCH") {
-      const body = await req.json();
-      if (!isObject(body)) return json({ error: "JSON object is required" }, 400);
+      const parsedBody = await req.json();
+      if (!isObject(parsedBody)) return json({ error: "JSON object is required" }, 400);
+      patchBody = parsedBody;
+      const body = patchBody;
       const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
       if (token && isObject(body) && typeof body.order_id === "string" && isObject(body.order)) {
         const { data: authData, error: authError } = await db.auth.getUser(token);
@@ -168,7 +171,7 @@ Deno.serve(async (req) => {
     if (!order) return json({ error: "Order not found" }, 404);
     if (req.method === "GET") return json({ data: order });
     if (req.method === "PATCH") {
-      const path = typeof body.payment_evidence_path === "string" ? body.payment_evidence_path.trim() : "";
+      const path = typeof patchBody.payment_evidence_path === "string" ? patchBody.payment_evidence_path.trim() : "";
       if (!path.startsWith(`orders/${order.id}/payment-evidence/`)) return json({ error: "Evidence path does not belong to this order" }, 400);
       const { data: updated, error } = await db.from("tiktok_orders")
         .update({ payment_evidence_path: path, updated_at: new Date().toISOString() })
