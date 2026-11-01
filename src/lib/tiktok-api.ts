@@ -109,6 +109,11 @@ export const tiktokApi = {
           tracking_number: fields.nomor_resi,
           shipping_date: fields.shipping_date,
           qris_image_path: fields.qris_image_path || null,
+          subtotal: Number(fields.produk_subtotal),
+          product_name: fields.produk_name,
+          product_image_path: fields.produk_img_path || null,
+          quantity: Number(fields.produk_jumlah),
+          weight: fields.produk_weight || null,
         },
       }),
     });
