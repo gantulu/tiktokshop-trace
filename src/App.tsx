@@ -240,9 +240,9 @@ const Input = ({ label, type = 'text', name, value, onChange, placeholder, requi
 );
 
 const StorageImageInput = ({
-  label, value, onChange, placeholder, previewUrl
+  label, value, onChange, placeholder, previewUrl, purpose
 }: {
-  label: string; value: string; onChange: (path: string) => void; placeholder?: string; previewUrl?: string;
+  label: string; value: string; onChange: (path: string) => void; placeholder?: string; previewUrl?: string; purpose: 'product-image' | 'qris-image';
 }) => {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(previewUrl || '');
@@ -252,7 +252,7 @@ const StorageImageInput = ({
     if (!file) return;
     setUploading(true);
     try {
-      const path = await tiktokApi.uploadImage(file);
+      const path = await tiktokApi.uploadImage(file, purpose);
       setPreview(URL.createObjectURL(file));
       onChange(path);
     } catch (error) {
@@ -928,7 +928,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
             <h4 className="text-[11px] font-bold text-[#8A8B91] uppercase tracking-widest border-b border-[#F1F1F2] pb-1">Detail Produk</h4>
             <Input label="Order ID" value={form.order_id} onChange={e => setForm({...form, order_id: e.target.value})} required />
             <Input label="Nama Produk" value={form.produk_name} onChange={e => setForm({...form, produk_name: e.target.value})} required />
-            <StorageImageInput label="Gambar Produk (Supabase Storage)" value={form.produk_img_path || ''} previewUrl={form.produk_img || ''} onChange={path => setForm({...form, produk_img_path: path})} />
+            <StorageImageInput label="Gambar Produk (Supabase Storage)" purpose="product-image" value={form.produk_img_path || ''} previewUrl={form.produk_img || ''} onChange={path => setForm({...form, produk_img_path: path})} />
             <div className="grid grid-cols-2 gap-4">
               <Input label="Jumlah" type="number" value={form.produk_jumlah} onChange={e => setForm({...form, produk_jumlah: e.target.value})} required />
               <Input label="Berat" value={form.produk_weight} onChange={e => setForm({...form, produk_weight: e.target.value})} placeholder="Contoh: 300gr" />
@@ -965,7 +965,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
           <div className="space-y-4">
             <h4 className="text-[11px] font-bold text-[#8A8B91] uppercase tracking-widest border-b border-[#F1F1F2] pb-1">Pembayaran</h4>
             <Input label="Total Harga (Subtotal)" type="number" value={form.produk_subtotal} onChange={e => setForm({...form, produk_subtotal: e.target.value})} required />
-            <StorageImageInput label="Gambar QRIS (Supabase Storage)" value={form.qris_image_path || ''} previewUrl={form.konfirmasi_qris_img || ''} onChange={path => setForm({...form, qris_image_path: path})} />
+            <StorageImageInput label="Gambar QRIS (Supabase Storage)" purpose="qris-image" value={form.qris_image_path || ''} previewUrl={form.konfirmasi_qris_img || ''} onChange={path => setForm({...form, qris_image_path: path})} />
           </div>
           
           <Button type="submit" disabled={loading}>{loading ? 'Menyimpan...' : 'Simpan Pesanan'}</Button>
