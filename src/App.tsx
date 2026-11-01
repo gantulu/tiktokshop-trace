@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { tiktokApi, supabase } from './lib/tiktok-api';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -221,7 +221,7 @@ const Button = ({ children, onClick, variant = 'primary', className = '', type =
   );
 };
 
-const Input = ({ label, type = 'text', name, value, onChange, placeholder, required, icon: Icon }: { label?: string; type?: string; name?: string; value: string | number; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; placeholder?: string; required?: boolean; icon?: any }) => (
+const Input = ({ label, type = 'text', name, value, onChange, placeholder, required, readOnly = false, icon: Icon }: { label?: string; type?: string; name?: string; value: string | number; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; placeholder?: string; required?: boolean; readOnly?: boolean; icon?: any }) => (
   <div className="mb-4">
     {label && <label className="block text-[13px] font-bold text-[#161823] mb-2 ml-1">{label}</label>}
     <div className="relative group">
@@ -233,6 +233,7 @@ const Input = ({ label, type = 'text', name, value, onChange, placeholder, requi
         onChange={onChange}
         placeholder={placeholder}
         required={required}
+        readOnly={readOnly}
         className={`w-full ${Icon ? 'pl-11' : 'px-4'} py-2.5 bg-[#F1F1F2] border border-transparent rounded-md focus:outline-none focus:ring-1 focus:ring-[#FE2C55] focus:bg-white focus:border-[#FE2C55] transition-all text-[#161823] text-[14px] placeholder:text-[#BBBCC0]`}
       />
     </div>
@@ -246,14 +247,26 @@ const StorageImageInput = ({
 }) => {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(previewUrl || '');
-  useEffect(() => { setPreview(previewUrl || ''); }, [previewUrl]);
+  const previewObjectUrl = useRef<string | null>(null);
+  useEffect(() => {
+    if (!value || previewUrl) {
+      if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
+      previewObjectUrl.current = null;
+      setPreview(previewUrl || '');
+    }
+  }, [value, previewUrl]);
+  useEffect(() => () => {
+    if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
+  }, []);
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     setUploading(true);
     try {
       const path = await tiktokApi.uploadImage(file, purpose);
-      setPreview(URL.createObjectURL(file));
+      if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
+      previewObjectUrl.current = URL.createObjectURL(file);
+      setPreview(previewObjectUrl.current);
       onChange(path);
     } catch (error) {
       console.error('Supabase Storage upload failed:', error);
@@ -926,7 +939,8 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
           {/* Detail Produk */}
           <div className="space-y-4">
             <h4 className="text-[11px] font-bold text-[#8A8B91] uppercase tracking-widest border-b border-[#F1F1F2] pb-1">Detail Produk</h4>
-            <Input label="Order ID" value={form.order_id} onChange={e => setForm({...form, order_id: e.target.value})} required />
+            {editingId && <Input label="Order ID" value={form.order_id || ''} onChange={() => undefined} readOnly />}
+            {!editingId && form.order_id && <Input label="Order ID" value={form.order_id} onChange={() => undefined} readOnly />}
             <Input label="Nama Produk" value={form.produk_name} onChange={e => setForm({...form, produk_name: e.target.value})} required />
             <StorageImageInput label="Gambar Produk (Supabase Storage)" purpose="product-image" value={form.produk_img_path || ''} previewUrl={form.produk_img || ''} onChange={path => setForm({...form, produk_img_path: path})} />
             <div className="grid grid-cols-2 gap-4">
