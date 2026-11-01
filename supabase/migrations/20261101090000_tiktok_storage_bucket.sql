@@ -1,0 +1,8 @@
+-- TikTok Shop image storage. Images are publicly readable; uploads are issued by crud-tiktok-2
+-- using a short-lived signed upload token. Never expose the service-role key to the browser.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('tiktok-order-images', 'tiktok-order-images', true, 5242880, array['image/jpeg','image/png','image/webp'])
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
