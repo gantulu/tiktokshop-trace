@@ -728,7 +728,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [form, setForm] = useState<any>({
-    order_id: '', produk_name: '', produk_img: '', produk_jumlah: '', produk_weight: '', produk_subtotal: '',
+    order_id: '', produk_name: '', produk_img: '', produk_img_path: '', produk_jumlah: '', produk_weight: '', produk_subtotal: '',
     konfirmasi_qris_img: '', qris_image_path: '', pengirim: '', nomor_pengirim: '', kota_pengirim: '', penerima: '', nomor_penerima: '',
     alamat_penerima: '', shipping_date: '', nomor_resi: '', kurir: ''
   });
@@ -749,7 +749,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       const role = data.session?.user.app_metadata?.role;
-      if (data.session && ['admin', 'superadmin'].includes(role)) setIsAuthenticated(true);
+      if (data.session && ['admin', 'superadmin'].includes(role)) { setIsAuthenticated(true); fetchOrders(); }
     });
   }, []);
 
@@ -762,8 +762,9 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
         await tiktokApi.updateOrder(form.order_id, payload);
         showToast("Pesanan diperbarui!");
       } else {
-        await tiktokApi.createOrder(payload);
-        showToast("Pesanan dibuat!");
+        const created = await tiktokApi.createOrder(payload);
+        setForm({ ...payload, order_id: created.order_id });
+        showToast(`Pesanan dibuat: ${created.order_id}`);
       }
       setIsModalOpen(false);
       fetchOrders();
@@ -907,7 +908,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
                 </div>
                 <div className="flex gap-1">
                   <button onClick={() => { setEditingId(order.id); setForm(order.fields); setIsModalOpen(true); }} className="p-2 text-[#161823] hover:bg-gray-100 rounded-md transition-colors"><Edit2 className="w-4 h-4" /></button>
-                  <button onClick={() => handleDelete(order.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                  
                 </div>
               </motion.div>
             ))}
