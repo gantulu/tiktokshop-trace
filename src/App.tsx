@@ -18,7 +18,6 @@ import {
   CreditCard, 
   Plus, 
   Edit2, 
-  Trash2, 
   X,
   ArrowRight,
   ExternalLink,
@@ -789,21 +788,6 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm("Hapus pesanan ini?")) {
-      setLoading(true);
-      try {
-        throw new Error('Penghapusan permanen dinonaktifkan. Gunakan pembatalan pesanan.');
-        showToast("Pesanan dihapus!");
-        fetchOrders();
-      } catch (err) {
-        console.error(err);
-        setLoading(false);
-        showToast("Gagal menghapus!");
-      }
-    }
-  };
-
   const filteredOrders = orders.filter(order => 
     order.fields.order_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     order.fields.produk_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -991,7 +975,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
               type="button" 
               variant="ghost" 
               icon={Copy}
-              onClick={() => copyToClipboard(`${window.location.origin}/#/orderview/${form.order_id}`, 'URL Pesanan')}
+              onClick={() => copyToClipboard(`${window.location.origin}/#/orderview/${encodeURIComponent(form.order_id)}/${encodeURIComponent(form.nomor_penerima || '')}`, 'URL Pesanan')}
             >
               Salin URL Pesanan
             </Button>
