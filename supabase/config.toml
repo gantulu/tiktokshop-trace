@@ -1,0 +1,5 @@
+[functions.get-tiktok]
+verify_jwt = false
+
+[functions.crud-tiktok-2]
+verify_jwt = false

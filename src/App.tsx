@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { tiktokApi, supabase } from './lib/tiktok-api';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
@@ -17,7 +18,6 @@ import {
   CreditCard, 
   Plus, 
   Edit2, 
-  Trash2, 
   X,
   ArrowRight,
   ExternalLink,
@@ -155,76 +155,7 @@ const formatRupiah = (value: number) => {
   }).format(value || 0);
 };
 
-const API_URL = 'https://api.airtable.com/v0/appvpSgTiYtxO4U1H/tiktok';
-const HEADERS = {
-  'Authorization': 'Bearer patRWehkBaP6g4SUZ.071d08fec0c5d8cbecb2b340a753eef28ed4f2048cd84a578ee591bb85dc577b',
-  'Content-Type': 'application/json'
-};
-
-const airtable = {
-  getAllOrders: async () => {
-    try {
-      const res = await fetch(API_URL, { headers: HEADERS });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data = await res.json();
-      return data.records || [];
-    } catch (e) {
-      console.error("Airtable getAllOrders failed:", e);
-      throw e;
-    }
-  },
-  getOrderById: async (order_id: string) => {
-    try {
-      const formula = encodeURIComponent(`{order_id}="${order_id}"`);
-      const res = await fetch(`${API_URL}?filterByFormula=${formula}`, { headers: HEADERS });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data = await res.json();
-      return data.records && data.records.length > 0 ? data.records[0] : null;
-    } catch (e) {
-      console.error("Airtable getOrderById failed:", e);
-      throw e;
-    }
-  },
-  createOrder: async (data: any) => {
-    try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: HEADERS,
-        body: JSON.stringify({ records: [{ fields: data }] })
-      });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      return await res.json();
-    } catch (e) {
-      console.error("Airtable createOrder failed:", e);
-      throw e;
-    }
-  },
-  updateOrder: async (id: string, data: any) => {
-    try {
-      const res = await fetch(API_URL, {
-        method: 'PATCH',
-        headers: HEADERS,
-        body: JSON.stringify({ records: [{ id, fields: data }] })
-      });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      return await res.json();
-    } catch (e) {
-      console.error("Airtable updateOrder failed:", e);
-      throw e;
-    }
-  },
-  deleteOrder: async (id: string) => {
-    try {
-      const res = await fetch(`${API_URL}/${id}`, { method: 'DELETE', headers: HEADERS });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      return await res.json();
-    } catch (e) {
-      console.error("Airtable deleteOrder failed:", e);
-      throw e;
-    }
-  }
-};
-
+// All persistence and uploads go through Supabase Edge Functions / Storage.
 // ==========================================
 // 3. REUSABLE COMPONENTS
 // ==========================================
@@ -290,7 +221,7 @@ const Button = ({ children, onClick, variant = 'primary', className = '', type =
   );
 };
 
-const Input = ({ label, type = 'text', name, value, onChange, placeholder, required, icon: Icon }: { label?: string; type?: string; name?: string; value: string | number; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; placeholder?: string; required?: boolean; icon?: any }) => (
+const Input = ({ label, type = 'text', name, value, onChange, placeholder, required, readOnly = false, icon: Icon }: { label?: string; type?: string; name?: string; value: string | number; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; placeholder?: string; required?: boolean; readOnly?: boolean; icon?: any }) => (
   <div className="mb-4">
     {label && <label className="block text-[13px] font-bold text-[#161823] mb-2 ml-1">{label}</label>}
     <div className="relative group">
@@ -302,89 +233,66 @@ const Input = ({ label, type = 'text', name, value, onChange, placeholder, requi
         onChange={onChange}
         placeholder={placeholder}
         required={required}
+        readOnly={readOnly}
         className={`w-full ${Icon ? 'pl-11' : 'px-4'} py-2.5 bg-[#F1F1F2] border border-transparent rounded-md focus:outline-none focus:ring-1 focus:ring-[#FE2C55] focus:bg-white focus:border-[#FE2C55] transition-all text-[#161823] text-[14px] placeholder:text-[#BBBCC0]`}
       />
     </div>
   </div>
 );
 
-const CloudinaryInput = ({ 
-  label, 
-  value, 
-  onChange, 
-  placeholder 
-}: { 
-  label: string; 
-  value: string; 
-  onChange: (url: string) => void; 
-  placeholder?: string; 
+const StorageImageInput = ({
+  label, value, onChange, placeholder, previewUrl, purpose
+}: {
+  label: string; value: string; onChange: (path: string) => void; placeholder?: string; previewUrl?: string; purpose: 'product-image' | 'qris-image';
 }) => {
   const [uploading, setUploading] = useState(false);
-  const cloudName = 'daj5cu840';
-  const uploadPreset = 'webflow';
-
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const [preview, setPreview] = useState(previewUrl || '');
+  const previewObjectUrl = useRef<string | null>(null);
+  useEffect(() => {
+    if (!value) {
+      if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
+      previewObjectUrl.current = null;
+      setPreview('');
+      return;
+    }
+    if (previewUrl && !previewObjectUrl.current) setPreview(previewUrl);
+  }, [value, previewUrl]);
+  useEffect(() => () => {
+    if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
+  }, []);
+  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
-
     setUploading(true);
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', uploadPreset);
-
     try {
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
-      if (data.secure_url) {
-        onChange(data.secure_url);
-      }
-    } catch (err) {
-      console.error('Upload failed:', err);
+      const path = await tiktokApi.uploadImage(file, purpose);
+      if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
+      previewObjectUrl.current = URL.createObjectURL(file);
+      setPreview(previewObjectUrl.current);
+      onChange(path);
+    } catch (error) {
+      console.error('Supabase Storage upload failed:', error);
+      alert(error instanceof Error ? error.message : 'Gagal mengunggah gambar');
     } finally {
       setUploading(false);
+      event.target.value = '';
     }
   };
-
   return (
     <div className="mb-4">
       <label className="block text-[13px] font-bold text-[#161823] mb-2 ml-1">{label}</label>
       <div className="relative group flex gap-2">
-        <div className="relative flex-1">
-          <input
-            type="text"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
-            className="w-full px-4 py-2.5 bg-[#F1F1F2] border border-transparent rounded-md focus:outline-none focus:ring-1 focus:ring-[#FE2C55] focus:bg-white focus:border-[#FE2C55] transition-all text-[#161823] text-[14px] placeholder:text-[#BBBCC0]"
-          />
-          {uploading && (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2">
-               <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} className="w-4 h-4 border-2 border-gray-200 border-t-[#FE2C55] rounded-full" />
-            </div>
-          )}
-        </div>
+        <input type="text" value={value} readOnly placeholder={placeholder || 'Path gambar Supabase Storage'}
+          className="w-full px-4 py-2.5 bg-[#F1F1F2] border border-transparent rounded-md text-[#161823] text-[12px]" />
         <label className="cursor-pointer shrink-0">
-          <input type="file" className="hidden" onChange={handleUpload} accept="image/*" />
-          <div className="h-full px-3 flex items-center justify-center bg-[#F1F1F2] border border-transparent rounded-md hover:bg-gray-200 transition-colors">
-            <Plus className="w-5 h-5 text-[#8A8B91]" />
+          <input type="file" className="hidden" onChange={handleUpload} accept="image/jpeg,image/png,image/webp" />
+          <div className="h-full px-3 flex items-center justify-center bg-[#F1F1F2] rounded-md">
+            {uploading ? <span className="text-xs">Upload...</span> : <Plus className="w-5 h-5 text-[#8A8B91]" />}
           </div>
         </label>
       </div>
-      {value && (
-        <div className="mt-2 relative w-16 h-16 rounded-md overflow-hidden border border-[#F1F1F2] group/img">
-          <img src={value} className="w-full h-full object-cover" alt="preview" />
-          <button 
-            type="button"
-            onClick={() => onChange('')}
-            className="absolute top-0 right-0 p-0.5 bg-black/50 text-white opacity-0 group-hover/img:opacity-100 transition-opacity"
-          >
-            <X className="w-3 h-3" />
-          </button>
-        </div>
-      )}
+      {preview && <img src={preview} className="mt-2 w-20 h-20 rounded-md object-cover border" alt="Preview upload" />}
+      {value && <button type="button" onClick={() => onChange('')} className="mt-2 text-xs text-red-500">Hapus gambar</button>}
     </div>
   );
 };
@@ -455,10 +363,11 @@ const BottomDrawer = ({ isOpen, onClose, children, title }: { isOpen: boolean; o
 
 const HomeView = ({ navigate }: { navigate: (path: string) => void }) => {
   const [orderId, setOrderId] = useState('');
+  const [recipientPhone, setRecipientPhone] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (orderId.trim()) navigate(`/orderview/${orderId.trim()}`);
+    if (orderId.trim() && recipientPhone.trim()) navigate(`/orderview/${encodeURIComponent(orderId.trim())}/${encodeURIComponent(recipientPhone.trim())}`);
   };
 
   return (
@@ -493,7 +402,7 @@ const HomeView = ({ navigate }: { navigate: (path: string) => void }) => {
             <span className="text-[#FE2C55]">TikTok Shop</span>
           </h1>
           <p className="text-[#8A8B91] text-[14px] leading-relaxed">
-            Masukkan nomor pesanan Anda untuk melihat status pengiriman dan detail paket secara real-time.
+            Masukkan nomor pesanan dan nomor WhatsApp penerima untuk melihat detail paket.
           </p>
         </div>
 
@@ -512,6 +421,12 @@ const HomeView = ({ navigate }: { navigate: (path: string) => void }) => {
                   className="w-full pl-12 pr-4 py-3.5 bg-[#F1F1F2] border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FE2C55]/20 focus:bg-white focus:border-[#FE2C55] transition-all text-[#161823] text-[15px] font-medium placeholder:text-[#BBBCC0]"
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[13px] font-bold text-[#161823] ml-1">Nomor WhatsApp Penerima</label>
+              <input type="tel" value={recipientPhone} onChange={e => setRecipientPhone(e.target.value)} required
+                placeholder="Contoh: 081234567890"
+                className="w-full px-4 py-3.5 bg-[#F1F1F2] rounded-xl text-[15px] focus:outline-none focus:ring-2 focus:ring-[#FE2C55]/20" />
             </div>
             <Button type="submit" className="py-4 rounded-xl text-[16px]">Lacak Sekarang</Button>
           </form>
@@ -550,31 +465,18 @@ const HomeView = ({ navigate }: { navigate: (path: string) => void }) => {
   );
 };
 
-const OrdersView = ({ orderId, navigate, showToast }: { orderId: string; navigate: (path: string) => void; showToast: (msg: string) => void }) => {
+const OrdersView = ({ orderId, phone, navigate, showToast }: { orderId: string; phone: string; navigate: (path: string) => void; showToast: (msg: string) => void }) => {
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [isEditRecipientOpen, setIsEditRecipientOpen] = useState(false);
-  const [recipientForm, setRecipientForm] = useState({
-    penerima: '',
-    nomor_penerima: '',
-    alamat_penerima: ''
-  });
+  const [paymentUploading, setPaymentUploading] = useState(false);
 
   const fetchOrder = async () => {
     setLoading(true);
     try {
-      const data = await airtable.getOrderById(orderId);
+      const data = await tiktokApi.getOrderById(orderId, phone);
       setOrder(data);
-      if (data) {
-        setRecipientForm({
-          penerima: data.fields.penerima || '',
-          nomor_penerima: data.fields.nomor_penerima || '',
-          alamat_penerima: data.fields.alamat_penerima || ''
-        });
-      } else {
-        showToast("Pesanan tidak ditemukan!");
-      }
+      if (!data) showToast("Pesanan tidak ditemukan!");
     } catch (err) { 
       console.error(err);
       showToast("Gagal mengambil data pesanan!");
@@ -584,28 +486,28 @@ const OrdersView = ({ orderId, navigate, showToast }: { orderId: string; navigat
 
   useEffect(() => {
     fetchOrder();
-  }, [orderId]);
-
-  const handleUpdateRecipient = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!order) return;
-    setLoading(true);
-    try {
-      await airtable.updateOrder(order.id, recipientForm);
-      showToast("Alamat diperbarui!");
-      setIsEditRecipientOpen(false);
-      fetchOrder();
-    } catch (err) {
-      console.error(err);
-      showToast("Gagal memperbarui!");
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [orderId, phone]);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     showToast(`${label} disalin!`);
+  };
+  const handlePaymentEvidence = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setPaymentUploading(true);
+    try {
+      await tiktokApi.submitPaymentEvidence(orderId, phone, file);
+      showToast('Bukti pembayaran berhasil diunggah!');
+      setDrawerOpen(false);
+      await fetchOrder();
+    } catch (error) {
+      console.error(error);
+      showToast(error instanceof Error ? error.message : 'Gagal mengunggah bukti pembayaran');
+    } finally {
+      setPaymentUploading(false);
+      event.target.value = '';
+    }
   };
 
   const handleDownloadQR = async () => {
@@ -715,12 +617,7 @@ const OrdersView = ({ orderId, navigate, showToast }: { orderId: string; navigat
             <div className="flex-1">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[14px] font-bold text-[#161823]">Alamat Pengiriman</span>
-                <button 
-                  onClick={() => setIsEditRecipientOpen(true)}
-                  className="p-1 text-[#8A8B91] hover:text-[#FE2C55] transition-colors"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </button>
+
               </div>
               <div className="text-[13px] font-bold text-[#161823] mb-1">{fields.penerima} | {fields.nomor_penerima}</div>
               <p className="text-[12px] text-[#8A8B91] leading-relaxed">{fields.alamat_penerima}</p>
@@ -839,43 +736,19 @@ const OrdersView = ({ orderId, navigate, showToast }: { orderId: string; navigat
           </div>
 
           <div className="space-y-3">
-            <Button onClick={() => { setDrawerOpen(false); showToast("Konfirmasi terkirim!"); }} variant="primary">Konfirmasi Pembayaran</Button>
+            <label className="block w-full text-center bg-[#FE2C55] text-white rounded-lg py-3 font-semibold cursor-pointer">{paymentUploading ? "Mengunggah..." : "Upload Bukti Pembayaran"}<input type="file" className="hidden" accept="image/jpeg,image/png,image/webp" onChange={handlePaymentEvidence} disabled={paymentUploading} /></label>
             <Button onClick={() => setDrawerOpen(false)} variant="ghost">Batal</Button>
           </div>
         </div>
       </BottomDrawer>
 
-      <BottomDrawer isOpen={isEditRecipientOpen} onClose={() => setIsEditRecipientOpen(false)} title="Edit Penerima">
-        <form onSubmit={handleUpdateRecipient} className="space-y-6 pb-10">
-          <div className="space-y-4">
-            <Input 
-              label="Nama Penerima" 
-              value={recipientForm.penerima} 
-              onChange={e => setRecipientForm({...recipientForm, penerima: e.target.value})} 
-              required 
-            />
-            <Input 
-              label="Nomor WhatsApp" 
-              value={recipientForm.nomor_penerima} 
-              onChange={e => setRecipientForm({...recipientForm, nomor_penerima: e.target.value})} 
-              required 
-            />
-            <Input 
-              label="Alamat Lengkap" 
-              value={recipientForm.alamat_penerima} 
-              onChange={e => setRecipientForm({...recipientForm, alamat_penerima: e.target.value})} 
-              required 
-            />
-          </div>
-          <Button type="submit" disabled={loading}>{loading ? 'Menyimpan...' : 'Simpan Perubahan'}</Button>
-        </form>
-      </BottomDrawer>
     </motion.div>
   );
 };
 
 const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; showToast: (msg: string) => void }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -883,15 +756,15 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [form, setForm] = useState<any>({
-    order_id: '', produk_name: '', produk_img: '', produk_jumlah: '', produk_weight: '', produk_subtotal: '',
-    konfirmasi_qris_img: '', pengirim: '', nomor_pengirim: '', kota_pengirim: '', penerima: '', nomor_penerima: '',
+    order_id: '', produk_name: '', produk_img: '', produk_img_path: '', produk_jumlah: '', produk_weight: '', produk_subtotal: '',
+    konfirmasi_qris_img: '', qris_image_path: '', pengirim: '', nomor_pengirim: '', kota_pengirim: '', penerima: '', nomor_penerima: '',
     alamat_penerima: '', shipping_date: '', nomor_resi: '', kurir: ''
   });
 
   const fetchOrders = async () => {
     setLoading(true);
     try { 
-      const data = await airtable.getAllOrders();
+      const data = await tiktokApi.getAllOrders();
       setOrders(data); 
     }
     catch (err) { 
@@ -901,7 +774,12 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchOrders(); }, []);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const role = data.session?.user.app_metadata?.role;
+      if (data.session && ['admin', 'superadmin'].includes(role)) { setIsAuthenticated(true); fetchOrders(); }
+    });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -909,11 +787,12 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
     const payload = { ...form, produk_jumlah: Number(form.produk_jumlah), produk_subtotal: Number(form.produk_subtotal) };
     try {
       if (editingId) {
-        await airtable.updateOrder(editingId, payload);
+        await tiktokApi.updateOrder(form.order_id, payload);
         showToast("Pesanan diperbarui!");
       } else {
-        await airtable.createOrder(payload);
-        showToast("Pesanan dibuat!");
+        const created = await tiktokApi.createOrder(payload);
+        setForm({ ...payload, order_id: created.order_id });
+        showToast(`Pesanan dibuat: ${created.order_id}`);
       }
       setIsModalOpen(false);
       fetchOrders();
@@ -921,21 +800,6 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
       console.error(err);
       setLoading(false); 
       showToast("Gagal menyimpan!");
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (window.confirm("Hapus pesanan ini?")) {
-      setLoading(true);
-      try {
-        await airtable.deleteOrder(id);
-        showToast("Pesanan dihapus!");
-        fetchOrders();
-      } catch (err) {
-        console.error(err);
-        setLoading(false);
-        showToast("Gagal menghapus!");
-      }
     }
   };
 
@@ -962,24 +826,23 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
           <ShieldCheck className="w-8 h-8 text-[#FE2C55]" />
         </div>
         <h3 className="text-lg font-bold text-[#161823] mb-2">Akses Admin</h3>
-        <p className="text-[#8A8B91] mb-8 text-[14px]">Silakan masukkan kata sandi untuk mengakses panel manajemen.</p>
+        <p className="text-[#8A8B91] mb-8 text-[14px]">Masuk menggunakan akun Admin Supabase yang memiliki role admin atau superadmin.</p>
         
-        <form onSubmit={(e) => {
+        <form onSubmit={async (e) => {
           e.preventDefault();
-          if (passwordInput === 'S@andiku2547') {
-            setIsAuthenticated(true);
-            showToast("Login berhasil!");
-          } else {
-            showToast("Kata sandi salah!");
+          const { data, error } = await supabase.auth.signInWithPassword({ email: emailInput, password: passwordInput });
+          const role = data.user?.app_metadata?.role;
+          if (error || !data.user || !['admin', 'superadmin'].includes(role)) {
+            await supabase.auth.signOut();
+            showToast("Login Admin gagal atau role tidak valid!");
+            return;
           }
+          setIsAuthenticated(true);
+          showToast("Login Admin berhasil!");
+          fetchOrders();
         }} className="w-full space-y-4">
-          <Input 
-            type="password" 
-            placeholder="Kata Sandi" 
-            value={passwordInput} 
-            onChange={(e) => setPasswordInput(e.target.value)} 
-            icon={ShieldCheck}
-          />
+          <Input type="email" placeholder="Email Admin" value={emailInput} onChange={e => setEmailInput(e.target.value)} required />
+          <Input type="password" placeholder="Kata Sandi" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} required icon={ShieldCheck} />
           <Button type="submit">Masuk</Button>
           <Button onClick={() => navigate('/')} variant="ghost">Batal</Button>
         </form>
@@ -1058,7 +921,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
                 </div>
                 <div className="flex gap-1">
                   <button onClick={() => { setEditingId(order.id); setForm(order.fields); setIsModalOpen(true); }} className="p-2 text-[#161823] hover:bg-gray-100 rounded-md transition-colors"><Edit2 className="w-4 h-4" /></button>
-                  <button onClick={() => handleDelete(order.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                  
                 </div>
               </motion.div>
             ))}
@@ -1078,9 +941,10 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
           {/* Detail Produk */}
           <div className="space-y-4">
             <h4 className="text-[11px] font-bold text-[#8A8B91] uppercase tracking-widest border-b border-[#F1F1F2] pb-1">Detail Produk</h4>
-            <Input label="Order ID" value={form.order_id} onChange={e => setForm({...form, order_id: e.target.value})} required />
+            {editingId && <Input label="Order ID" value={form.order_id || ''} onChange={() => undefined} readOnly />}
+            {!editingId && form.order_id && <Input label="Order ID" value={form.order_id} onChange={() => undefined} readOnly />}
             <Input label="Nama Produk" value={form.produk_name} onChange={e => setForm({...form, produk_name: e.target.value})} required />
-            <CloudinaryInput label="URL Gambar" value={form.produk_img} onChange={url => setForm({...form, produk_img: url})} placeholder="Upload atau masukkan URL..." />
+            <StorageImageInput label="Gambar Produk (Supabase Storage)" purpose="product-image" value={form.produk_img_path || ''} previewUrl={form.produk_img || ''} onChange={path => setForm({...form, produk_img_path: path})} />
             <div className="grid grid-cols-2 gap-4">
               <Input label="Jumlah" type="number" value={form.produk_jumlah} onChange={e => setForm({...form, produk_jumlah: e.target.value})} required />
               <Input label="Berat" value={form.produk_weight} onChange={e => setForm({...form, produk_weight: e.target.value})} placeholder="Contoh: 300gr" />
@@ -1117,7 +981,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
           <div className="space-y-4">
             <h4 className="text-[11px] font-bold text-[#8A8B91] uppercase tracking-widest border-b border-[#F1F1F2] pb-1">Pembayaran</h4>
             <Input label="Total Harga (Subtotal)" type="number" value={form.produk_subtotal} onChange={e => setForm({...form, produk_subtotal: e.target.value})} required />
-            <CloudinaryInput label="URL QRIS" value={form.konfirmasi_qris_img} onChange={url => setForm({...form, konfirmasi_qris_img: url})} placeholder="Upload atau masukkan URL..." />
+            <StorageImageInput label="Gambar QRIS (Supabase Storage)" purpose="qris-image" value={form.qris_image_path || ''} previewUrl={form.konfirmasi_qris_img || ''} onChange={path => setForm({...form, qris_image_path: path})} />
           </div>
           
           <Button type="submit" disabled={loading}>{loading ? 'Menyimpan...' : 'Simpan Pesanan'}</Button>
@@ -1127,7 +991,7 @@ const AdminView = ({ navigate, showToast }: { navigate: (path: string) => void; 
               type="button" 
               variant="ghost" 
               icon={Copy}
-              onClick={() => copyToClipboard(`${window.location.origin}/#/orderview/${form.order_id}`, 'URL Pesanan')}
+              onClick={() => copyToClipboard(`${window.location.origin}/#/orderview/${encodeURIComponent(form.order_id)}/${encodeURIComponent(form.nomor_penerima || '')}`, 'URL Pesanan')}
             >
               Salin URL Pesanan
             </Button>
@@ -1202,7 +1066,9 @@ export default function App() {
 
   if (currentPath.startsWith('#/orderview/')) {
     Component = OrdersView;
-    params.orderId = currentPath.replace('#/orderview/', '');
+    const parts = currentPath.replace('#/orderview/', '').split('/');
+    params.orderId = decodeURIComponent(parts[0] || '');
+    params.phone = decodeURIComponent(parts[1] || '');
   } else if (currentPath === '#/admin') Component = AdminView;
   else Component = HomeView;
 
