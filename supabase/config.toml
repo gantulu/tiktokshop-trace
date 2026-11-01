@@ -1,0 +1,1 @@
+[functions.get-tiktok]\nverify_jwt = false\n\n[functions.crud-tiktok-2]\nverify_jwt = false\n
