@@ -9,6 +9,19 @@ const json = (data: unknown, status = 200) => new Response(JSON.stringify(data),
 const db = () => createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
+async function signedStorageUrl(client: ReturnType<typeof db>, path: string | null) {
+  if (!path) return null;
+  const { data, error } = await client.storage.from("tiktok-order-images").createSignedUrl(path, 3600);
+  if (error) { console.error("Storage signed URL:", error.message); return null; }
+  return data.signedUrl;
+}
+async function withItemImageUrls(client: ReturnType<typeof db>, items: any[]) {
+  return Promise.all(items.map(async (item) => ({
+    ...item,
+    product_image_path: item.product_image_url,
+    product_image_url: await signedStorageUrl(client, item.product_image_url),
+  })));
+}
 async function requireAdmin(req: Request, client: ReturnType<typeof db>) {
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return false;
@@ -47,10 +60,11 @@ Deno.serve(async (req) => {
       ? await client.from("tiktok_order_items").select("*").in("order_id", ids)
       : { data: [], error: null };
     if (itemsError) return json({ error: "Unable to retrieve order items" }, 500);
-    const mapped = (orders ?? []).map((order) => ({
+    const mapped = await Promise.all((orders ?? []).map(async (order) => ({
       ...order,
-      items: (items ?? []).filter((item) => item.order_id === order.id),
-    }));
+      qris_image_url: await signedStorageUrl(client, order.qris_image_path),
+      items: await withItemImageUrls(client, (items ?? []).filter((item) => item.order_id === order.id)),
+    })));
     return json({ data: mapped, pagination: { page, limit, total: count ?? 0, total_pages: Math.ceil((count ?? 0) / limit) } });
   }
 
@@ -73,15 +87,8 @@ Deno.serve(async (req) => {
       .eq("order_id", order.id).order("created_at", { ascending: false }).limit(50),
   ]);
   if (itemError || eventError) return json({ error: "Unable to retrieve order details" }, 500);
-  let evidenceUrl: string | null = null;
-  let qrisUrl: string | null = null;
-  if (order.payment_evidence_path) {
-    const { data } = await client.storage.from("tiktok-order-images").createSignedUrl(order.payment_evidence_path, 3600);
-    evidenceUrl = data?.signedUrl ?? null;
-  }
-  if (order.qris_image_path) {
-    const { data } = await client.storage.from("tiktok-order-images").createSignedUrl(order.qris_image_path, 3600);
-    qrisUrl = data?.signedUrl ?? null;
-  }
-  return json({ data: { ...order, payment_evidence_url: evidenceUrl, qris_image_url: qrisUrl, items: items ?? [], events: events ?? [] } });
+  const evidenceUrl = await signedStorageUrl(client, order.payment_evidence_path);
+  const qrisUrl = await signedStorageUrl(client, order.qris_image_path);
+  const mappedItems = await withItemImageUrls(client, items ?? []);
+  return json({ data: { ...order, payment_evidence_url: evidenceUrl, qris_image_url: qrisUrl, items: mappedItems, events: events ?? [] } });
 });
