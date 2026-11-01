@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
     }
     if (req.method === "PATCH") {
       const body = await req.json();
-      const token = req.headers.get("authorization")?.replace(/^Bearer\\s+/i, "");
+      const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
       if (token && isObject(body) && typeof body.order_id === "string" && isObject(body.order)) {
         const { data: authData, error: authError } = await db.auth.getUser(token);
         const role = authData.user?.app_metadata?.role;
